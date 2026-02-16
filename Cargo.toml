@@ -1,0 +1,17 @@
+[package]
+name = "mavlink-to-kafka"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+figment = { version = "0.10", features = ["toml", "env"] }
+mavlink = { version = "0.14", features = ["ardupilotmega", "serde"] }
+rdkafka = { version = "0.37", features = ["cmake-build", "tokio"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

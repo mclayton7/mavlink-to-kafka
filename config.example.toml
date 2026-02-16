@@ -1,0 +1,25 @@
+[mavlink]
+# MAVLink connection string
+# Examples:
+#   "udpin:0.0.0.0:14550"       - Listen for UDP on port 14550
+#   "tcpout:127.0.0.1:5760"     - Connect to TCP on port 5760
+#   "serial:/dev/ttyUSB0:57600" - Serial at 57600 baud
+connection_string = "udpin:0.0.0.0:14550"
+
+[kafka]
+# Comma-separated list of Kafka broker addresses
+brokers = "localhost:9092"
+
+# Topic prefix — messages are published to <prefix>.<MESSAGE_NAME>
+# e.g., "mavlink.HEARTBEAT", "mavlink.GPS_RAW_INT"
+topic_prefix = "mavlink"
+
+# Additional rdkafka producer properties (optional)
+# [kafka.producer_properties]
+# "linger.ms" = "5"
+# "compression.type" = "lz4"
+
+[logging]
+# Log level: trace, debug, info, warn, error
+# Can also be set via RUST_LOG env var
+level = "info"
