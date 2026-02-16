@@ -8,11 +8,14 @@ use tracing::{debug, error, info, warn};
 
 use crate::mavlink_source::MavConnection;
 
+/// Consumes JSON command messages from a Kafka topic and sends them as MAVLink
+/// messages over a shared connection.
 pub struct KafkaCommandConsumer {
     consumer: StreamConsumer,
 }
 
 impl KafkaCommandConsumer {
+    /// Creates a new consumer subscribed to the given command topic.
     pub fn new(
         brokers: &str,
         command_topic: &str,
@@ -40,6 +43,9 @@ impl KafkaCommandConsumer {
         Ok(Self { consumer })
     }
 
+    /// Receives commands from Kafka, deserializes them, and sends each one to
+    /// the MAVLink connection via `spawn_blocking`. Returns the number of
+    /// commands sent. Runs until the cancel token is triggered.
     pub async fn run(
         &self,
         conn: Arc<Box<MavConnection>>,

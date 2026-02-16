@@ -6,7 +6,10 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+/// Type alias for a thread-safe MAVLink connection.
 pub type MavConnection = dyn mavlink::MavConnection<MavMessage> + Send + Sync;
+
+/// A received MAVLink message with its header.
 pub type MavlinkMsg = (MavHeader, MavMessage);
 
 /// Create a MAVLink connection wrapped in Arc for shared use.
@@ -16,9 +19,12 @@ pub fn connect(connection_string: &str) -> anyhow::Result<Arc<Box<MavConnection>
     Ok(Arc::new(conn))
 }
 
+/// Reads MAVLink messages from a connection and sends them over an mpsc channel.
 pub struct MavlinkSource;
 
 impl MavlinkSource {
+    /// Spawns a blocking read loop that receives MAVLink messages and forwards
+    /// them through the returned channel. Stops when the cancel token is triggered.
     pub fn run(
         conn: Arc<Box<MavConnection>>,
         cancel_token: CancellationToken,

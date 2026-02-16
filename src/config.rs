@@ -4,6 +4,7 @@ use figment::Figment;
 use figment::providers::{Env, Format, Serialized, Toml};
 use serde::Deserialize;
 
+/// Top-level application configuration, loaded from TOML / env / CLI.
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
     pub mavlink: MavlinkConfig,
@@ -11,26 +12,39 @@ pub struct AppConfig {
     pub logging: LoggingConfig,
 }
 
+/// MAVLink connection settings.
 #[derive(Debug, Deserialize)]
 pub struct MavlinkConfig {
+    /// Connection string, e.g. `"udpin:0.0.0.0:14550"`.
     pub connection_string: String,
 }
 
+/// Kafka producer and command consumer settings.
 #[derive(Debug, Deserialize)]
 pub struct KafkaConfig {
+    /// Comma-separated broker addresses.
     pub brokers: String,
+    /// Topic prefix — outbound messages go to `<prefix>.<MESSAGE_NAME>`.
     pub topic_prefix: String,
+    /// Extra rdkafka producer properties (e.g. `linger.ms`, `compression.type`).
     #[serde(default)]
     pub producer_properties: HashMap<String, String>,
+    /// Optional Kafka-to-MAVLink command consumer configuration.
     #[serde(default)]
     pub commands: CommandConfig,
 }
 
+/// Configuration for the Kafka command consumer (Kafka -> MAVLink path).
+/// Disabled by default so existing deployments are unaffected.
 #[derive(Debug, Deserialize)]
 pub struct CommandConfig {
+    /// Whether to start the command consumer.
     pub enabled: bool,
+    /// Kafka topic to consume command messages from.
     pub command_topic: String,
+    /// Consumer group ID for offset tracking.
     pub consumer_group_id: String,
+    /// Extra rdkafka consumer properties.
     #[serde(default)]
     pub consumer_properties: HashMap<String, String>,
 }
@@ -46,8 +60,10 @@ impl Default for CommandConfig {
     }
 }
 
+/// Logging configuration.
 #[derive(Debug, Deserialize)]
 pub struct LoggingConfig {
+    /// Log level filter: trace, debug, info, warn, or error.
     pub level: String,
 }
 
@@ -71,6 +87,8 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    /// Loads configuration by layering defaults, TOML file, and environment
+    /// variables (prefixed with `MAVLINK_TO_KAFKA__`).
     pub fn load(config_path: Option<&str>) -> anyhow::Result<Self> {
         let mut figment = Figment::from(Serialized::defaults(AppConfig::default()));
 

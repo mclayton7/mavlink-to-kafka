@@ -5,12 +5,14 @@ use rdkafka::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use tracing::{debug, error};
 
+/// Publishes serialized MAVLink messages to Kafka topics.
 pub struct KafkaSink {
     producer: FutureProducer,
     topic_prefix: String,
 }
 
 impl KafkaSink {
+    /// Creates a new Kafka producer connected to the given brokers.
     pub fn new(
         brokers: &str,
         topic_prefix: &str,
@@ -32,6 +34,7 @@ impl KafkaSink {
         })
     }
 
+    /// Publishes a payload to `<prefix>.<message_name>`, keyed by `system_id`.
     pub async fn publish(&self, message_name: &str, system_id: u8, payload: &[u8]) {
         let topic = crate::message::build_topic_name(&self.topic_prefix, message_name);
         let key = system_id.to_string();

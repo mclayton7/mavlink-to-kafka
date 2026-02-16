@@ -22,14 +22,17 @@ struct CommandPayload {
     message: MavMessage,
 }
 
+/// Returns the MAVLink message type name (e.g. `"HEARTBEAT"`).
 pub fn extract_message_name(msg: &MavMessage) -> &'static str {
     msg.message_name()
 }
 
+/// Builds a Kafka topic name as `<prefix>.<message_name>`.
 pub fn build_topic_name(prefix: &str, message_name: &str) -> String {
     format!("{prefix}.{message_name}")
 }
 
+/// Serializes a MAVLink header and message to a JSON byte vector for Kafka.
 pub fn serialize_for_kafka(header: &MavHeader, msg: &MavMessage) -> anyhow::Result<Vec<u8>> {
     let payload = KafkaPayload {
         header: HeaderPayload {
@@ -43,6 +46,8 @@ pub fn serialize_for_kafka(header: &MavHeader, msg: &MavMessage) -> anyhow::Resu
     Ok(json)
 }
 
+/// Deserializes a JSON command payload into a MAVLink header and message.
+/// The `sequence` header field is optional and defaults to 0.
 pub fn deserialize_command(bytes: &[u8]) -> anyhow::Result<(MavHeader, MavMessage)> {
     let payload: CommandPayload = serde_json::from_slice(bytes)?;
     let header = MavHeader {
