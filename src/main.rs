@@ -1,5 +1,6 @@
 mod config;
 mod kafka_sink;
+mod kafka_source;
 mod mavlink_source;
 mod message;
 
@@ -28,6 +29,14 @@ struct Cli {
     #[arg(short = 't', long)]
     topic_prefix: Option<String>,
 
+    /// Kafka command topic (enables command consumer)
+    #[arg(long)]
+    command_topic: Option<String>,
+
+    /// Kafka consumer group ID for command consumer
+    #[arg(long)]
+    consumer_group: Option<String>,
+
     /// Log level (trace, debug, info, warn, error)
     #[arg(short, long)]
     log_level: Option<String>,
@@ -52,6 +61,13 @@ async fn main() -> anyhow::Result<()> {
     if let Some(prefix) = cli.topic_prefix {
         app_config.kafka.topic_prefix = prefix;
     }
+    if let Some(topic) = cli.command_topic {
+        app_config.kafka.commands.command_topic = topic;
+        app_config.kafka.commands.enabled = true;
+    }
+    if let Some(group) = cli.consumer_group {
+        app_config.kafka.commands.consumer_group_id = group;
+    }
     if let Some(level) = cli.log_level {
         app_config.logging.level = level;
     }
@@ -68,6 +84,7 @@ async fn main() -> anyhow::Result<()> {
         mavlink_connection = %app_config.mavlink.connection_string,
         kafka_brokers = %app_config.kafka.brokers,
         topic_prefix = %app_config.kafka.topic_prefix,
+        commands_enabled = app_config.kafka.commands.enabled,
         "Starting mavlink-to-kafka"
     );
 
@@ -83,12 +100,32 @@ async fn main() -> anyhow::Result<()> {
         shutdown_token.cancel();
     });
 
-    // Connect to MAVLink source
+    // Connect to MAVLink (shared connection)
+    let conn = mavlink_source::connect(&app_config.mavlink.connection_string)?;
+
+    // Start MAVLink reader
     let mut rx = mavlink_source::MavlinkSource::run(
-        &app_config.mavlink.connection_string,
+        conn.clone(),
         cancel_token.clone(),
         CHANNEL_SIZE,
-    )?;
+    );
+
+    // Conditionally start command consumer
+    let command_handle = if app_config.kafka.commands.enabled {
+        let command_consumer = kafka_source::KafkaCommandConsumer::new(
+            &app_config.kafka.brokers,
+            &app_config.kafka.commands.command_topic,
+            &app_config.kafka.commands.consumer_group_id,
+            &app_config.kafka.commands.consumer_properties,
+        )?;
+        let cmd_conn = conn.clone();
+        let cmd_token = cancel_token.clone();
+        Some(tokio::spawn(async move {
+            command_consumer.run(cmd_conn, cmd_token).await
+        }))
+    } else {
+        None
+    };
 
     // Create Kafka producer
     let kafka_sink = kafka_sink::KafkaSink::new(
@@ -135,6 +172,18 @@ async fn main() -> anyhow::Result<()> {
                         break;
                     }
                 }
+            }
+        }
+    }
+
+    // Wait for command consumer to finish
+    if let Some(handle) = command_handle {
+        match handle.await {
+            Ok(command_count) => {
+                info!(commands_sent = command_count, "Command consumer finished");
+            }
+            Err(e) => {
+                error!(error = %e, "Command consumer task failed");
             }
         }
     }

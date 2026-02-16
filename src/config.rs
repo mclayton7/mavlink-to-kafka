@@ -22,6 +22,28 @@ pub struct KafkaConfig {
     pub topic_prefix: String,
     #[serde(default)]
     pub producer_properties: HashMap<String, String>,
+    #[serde(default)]
+    pub commands: CommandConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CommandConfig {
+    pub enabled: bool,
+    pub command_topic: String,
+    pub consumer_group_id: String,
+    #[serde(default)]
+    pub consumer_properties: HashMap<String, String>,
+}
+
+impl Default for CommandConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            command_topic: "mavlink.commands".to_string(),
+            consumer_group_id: "mavlink-to-kafka".to_string(),
+            consumer_properties: HashMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,6 +61,7 @@ impl Default for AppConfig {
                 brokers: "localhost:9092".to_string(),
                 topic_prefix: "mavlink".to_string(),
                 producer_properties: HashMap::new(),
+                commands: CommandConfig::default(),
             },
             logging: LoggingConfig {
                 level: "info".to_string(),
@@ -88,10 +111,23 @@ impl serde::Serialize for MavlinkConfig {
 impl serde::Serialize for KafkaConfig {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("KafkaConfig", 3)?;
+        let mut state = serializer.serialize_struct("KafkaConfig", 4)?;
         state.serialize_field("brokers", &self.brokers)?;
         state.serialize_field("topic_prefix", &self.topic_prefix)?;
         state.serialize_field("producer_properties", &self.producer_properties)?;
+        state.serialize_field("commands", &self.commands)?;
+        state.end()
+    }
+}
+
+impl serde::Serialize for CommandConfig {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("CommandConfig", 4)?;
+        state.serialize_field("enabled", &self.enabled)?;
+        state.serialize_field("command_topic", &self.command_topic)?;
+        state.serialize_field("consumer_group_id", &self.consumer_group_id)?;
+        state.serialize_field("consumer_properties", &self.consumer_properties)?;
         state.end()
     }
 }
@@ -120,9 +156,19 @@ mod tests {
     }
 
     #[test]
+    fn test_default_command_config() {
+        let config = AppConfig::default();
+        assert!(!config.kafka.commands.enabled);
+        assert_eq!(config.kafka.commands.command_topic, "mavlink.commands");
+        assert_eq!(config.kafka.commands.consumer_group_id, "mavlink-to-kafka");
+        assert!(config.kafka.commands.consumer_properties.is_empty());
+    }
+
+    #[test]
     fn test_load_defaults_without_file() {
         let config = AppConfig::load(None).unwrap();
         assert_eq!(config.kafka.topic_prefix, "mavlink");
+        assert!(!config.kafka.commands.enabled);
     }
 
     #[test]
@@ -140,6 +186,11 @@ connection_string = "tcpout:127.0.0.1:5760"
 brokers = "kafka1:9092,kafka2:9092"
 topic_prefix = "uav"
 
+[kafka.commands]
+enabled = true
+command_topic = "uav.commands"
+consumer_group_id = "my-group"
+
 [logging]
 level = "debug"
 "#,
@@ -151,6 +202,9 @@ level = "debug"
         assert_eq!(config.kafka.brokers, "kafka1:9092,kafka2:9092");
         assert_eq!(config.kafka.topic_prefix, "uav");
         assert_eq!(config.logging.level, "debug");
+        assert!(config.kafka.commands.enabled);
+        assert_eq!(config.kafka.commands.command_topic, "uav.commands");
+        assert_eq!(config.kafka.commands.consumer_group_id, "my-group");
 
         std::fs::remove_dir_all(&dir).ok();
     }

@@ -1,6 +1,6 @@
 use mavlink::ardupilotmega::MavMessage;
 use mavlink::{MavHeader, Message};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 struct KafkaPayload<'a> {
@@ -8,11 +8,18 @@ struct KafkaPayload<'a> {
     message: &'a MavMessage,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct HeaderPayload {
     system_id: u8,
     component_id: u8,
+    #[serde(default)]
     sequence: u8,
+}
+
+#[derive(Deserialize)]
+struct CommandPayload {
+    header: HeaderPayload,
+    message: MavMessage,
 }
 
 pub fn extract_message_name(msg: &MavMessage) -> &'static str {
@@ -34,6 +41,16 @@ pub fn serialize_for_kafka(header: &MavHeader, msg: &MavMessage) -> anyhow::Resu
     };
     let json = serde_json::to_vec(&payload)?;
     Ok(json)
+}
+
+pub fn deserialize_command(bytes: &[u8]) -> anyhow::Result<(MavHeader, MavMessage)> {
+    let payload: CommandPayload = serde_json::from_slice(bytes)?;
+    let header = MavHeader {
+        system_id: payload.header.system_id,
+        component_id: payload.header.component_id,
+        sequence: payload.header.sequence,
+    };
+    Ok((header, payload.message))
 }
 
 #[cfg(test)]
@@ -114,5 +131,54 @@ mod tests {
         let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(value["header"]["system_id"], 2);
         assert!(value["message"].is_object());
+    }
+
+    #[test]
+    fn test_roundtrip_serialize_deserialize() {
+        let header = MavHeader {
+            system_id: 1,
+            component_id: 2,
+            sequence: 99,
+        };
+        let msg = MavMessage::HEARTBEAT(mavlink::ardupilotmega::HEARTBEAT_DATA {
+            custom_mode: 5,
+            mavtype: mavlink::ardupilotmega::MavType::MAV_TYPE_QUADROTOR,
+            autopilot: mavlink::ardupilotmega::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
+            base_mode: mavlink::ardupilotmega::MavModeFlag::empty(),
+            system_status: mavlink::ardupilotmega::MavState::MAV_STATE_ACTIVE,
+            mavlink_version: 3,
+        });
+
+        let bytes = serialize_for_kafka(&header, &msg).unwrap();
+        let (header2, msg2) = deserialize_command(&bytes).unwrap();
+
+        assert_eq!(header2.system_id, header.system_id);
+        assert_eq!(header2.component_id, header.component_id);
+        assert_eq!(header2.sequence, header.sequence);
+
+        // Compare by re-serializing (MavMessage doesn't impl PartialEq)
+        let bytes2 = serialize_for_kafka(&header2, &msg2).unwrap();
+        assert_eq!(bytes, bytes2);
+    }
+
+    #[test]
+    fn test_deserialize_without_sequence() {
+        let json = r#"{"header":{"system_id":1,"component_id":1},"message":{"type":"HEARTBEAT","custom_mode":0,"mavtype":{"type":"MAV_TYPE_QUADROTOR"},"autopilot":{"type":"MAV_AUTOPILOT_ARDUPILOTMEGA"},"base_mode":{"bits":0},"system_status":{"type":"MAV_STATE_ACTIVE"},"mavlink_version":3}}"#;
+        let (header, _msg) = deserialize_command(json.as_bytes()).unwrap();
+        assert_eq!(header.system_id, 1);
+        assert_eq!(header.sequence, 0); // default
+    }
+
+    #[test]
+    fn test_deserialize_invalid_json() {
+        let result = deserialize_command(b"not json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_missing_fields() {
+        let json = r#"{"header":{"system_id":1}}"#;
+        let result = deserialize_command(json.as_bytes());
+        assert!(result.is_err());
     }
 }

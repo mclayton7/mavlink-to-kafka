@@ -19,6 +19,19 @@ topic_prefix = "mavlink"
 # "linger.ms" = "5"
 # "compression.type" = "lz4"
 
+# Command consumer — receives JSON commands from Kafka and sends them as MAVLink messages
+[kafka.commands]
+# Set to true to enable the command consumer (default: false)
+enabled = false
+# Kafka topic to consume commands from
+command_topic = "mavlink.commands"
+# Consumer group ID
+consumer_group_id = "mavlink-to-kafka"
+
+# Additional rdkafka consumer properties (optional)
+# [kafka.commands.consumer_properties]
+# "auto.offset.reset" = "earliest"
+
 [logging]
 # Log level: trace, debug, info, warn, error
 # Can also be set via RUST_LOG env var
