@@ -6,36 +6,44 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+/// Type alias for a thread-safe MAVLink connection.
+pub type MavConnection = dyn mavlink::MavConnection<MavMessage> + Send + Sync;
+
+/// A received MAVLink message with its header.
 pub type MavlinkMsg = (MavHeader, MavMessage);
 
+/// Create a MAVLink connection wrapped in Arc for shared use.
+pub fn connect(connection_string: &str) -> anyhow::Result<Arc<Box<MavConnection>>> {
+    let conn = mavlink::connect::<MavMessage>(connection_string)?;
+    info!(connection = %connection_string, "Connected to MAVLink");
+    Ok(Arc::new(conn))
+}
+
+/// Reads MAVLink messages from a connection and sends them over an mpsc channel.
 pub struct MavlinkSource;
 
 impl MavlinkSource {
+    /// Spawns a blocking read loop that receives MAVLink messages and forwards
+    /// them through the returned channel. Stops when the cancel token is triggered.
     pub fn run(
-        connection_string: &str,
+        conn: Arc<Box<MavConnection>>,
         cancel_token: CancellationToken,
         channel_size: usize,
-    ) -> anyhow::Result<mpsc::Receiver<MavlinkMsg>> {
-        let connection_string = connection_string.to_string();
+    ) -> mpsc::Receiver<MavlinkMsg> {
         let (tx, rx) = mpsc::channel(channel_size);
-
-        // Connect before spawning so we can return connection errors immediately
-        let conn = mavlink::connect::<MavMessage>(&connection_string)?;
-        info!(connection = %connection_string, "Connected to MAVLink source");
 
         tokio::task::spawn_blocking(move || {
             Self::read_loop(conn, tx, cancel_token);
         });
 
-        Ok(rx)
+        rx
     }
 
     fn read_loop(
-        conn: Box<dyn mavlink::MavConnection<MavMessage> + Send + Sync>,
+        conn: Arc<Box<MavConnection>>,
         tx: mpsc::Sender<MavlinkMsg>,
         cancel_token: CancellationToken,
     ) {
-        let conn = Arc::new(conn);
         loop {
             if cancel_token.is_cancelled() {
                 info!("MAVLink reader shutting down");

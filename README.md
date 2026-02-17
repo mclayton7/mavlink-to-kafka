@@ -1,16 +1,16 @@
 # mavlink-to-kafka
 
-A Rust application that reads MAVLink messages from a single source (TCP, UDP, or serial) and publishes each message as JSON to Kafka topics named `mavlink.<MESSAGE_NAME>`.
+A Rust application that bridges MAVLink messages and Apache Kafka. It reads MAVLink messages and publishes each one as JSON to Kafka topics named `mavlink.<MESSAGE_NAME>`. Optionally, it can consume command messages from a Kafka topic and send them as MAVLink messages over the same connection.
 
 ## Architecture
 
 ```
-spawn_blocking(mavlink recv) --[mpsc channel]--> async task(serialize + FutureProducer.send) --> Kafka
-                                    ^
-                            CancellationToken (Ctrl+C)
+Kafka StreamConsumer.recv() (async) → deserialize JSON → spawn_blocking(conn.send()) → MAVLink
+MAVLink conn.recv() (spawn_blocking) → mpsc → serialize JSON → FutureProducer.send() → Kafka
+                                CancellationToken (Ctrl+C)
 ```
 
-The `mavlink` crate's `recv()` is blocking, so it runs on a dedicated `spawn_blocking` task that sends messages over a `tokio::sync::mpsc` channel. The main async task consumes from the channel, serializes to JSON, and publishes via `rdkafka::FutureProducer`. Graceful shutdown is coordinated with `CancellationToken`.
+The `mavlink` crate's `recv()` and `send()` are blocking, so they run via `spawn_blocking`. The MAVLink connection is shared between the reader and command sender via `Arc` — this is safe because `MavConnection::send()` takes `&self`.
 
 ## Building
 
@@ -31,7 +31,11 @@ cargo run --release
 
 # Or override with environment variables
 MAVLINK_TO_KAFKA__MAVLINK__CONNECTION_STRING="tcpout:127.0.0.1:5760" cargo run --release
+
+# Enable command consumer via env var
+MAVLINK_TO_KAFKA__KAFKA__COMMANDS__ENABLED=true cargo run --release
 ```
+
 
 ## Configuration
 
@@ -52,6 +56,8 @@ See [`config.example.toml`](config.example.toml) for all available options.
 export MAVLINK_TO_KAFKA__MAVLINK__CONNECTION_STRING="udpin:0.0.0.0:14550"
 export MAVLINK_TO_KAFKA__KAFKA__BROKERS="kafka1:9092,kafka2:9092"
 export MAVLINK_TO_KAFKA__KAFKA__TOPIC_PREFIX="uav"
+export MAVLINK_TO_KAFKA__KAFKA__COMMANDS__ENABLED="true"
+export MAVLINK_TO_KAFKA__KAFKA__COMMANDS__COMMAND_TOPIC="mavlink.commands"
 export MAVLINK_TO_KAFKA__LOGGING__LEVEL="debug"
 ```
 
@@ -110,6 +116,41 @@ The partition key is the MAVLink `system_id`, preserving per-vehicle message ord
     "mavlink_version": 3
   }
 }
+```
+
+## Commands (Kafka → MAVLink)
+
+When enabled, the bridge consumes JSON command messages from a Kafka topic and sends them as MAVLink messages. Enable via config (`kafka.commands.enabled = true`) or CLI (`--command-topic`).
+
+### Command JSON Format
+
+Commands use the same JSON format as outbound messages:
+
+```json
+{
+  "header": {
+    "system_id": 255,
+    "component_id": 190
+  },
+  "message": {
+    "type": "HEARTBEAT",
+    "custom_mode": 0,
+    "mavtype": { "type": "MAV_TYPE_GCS" },
+    "autopilot": { "type": "MAV_AUTOPILOT_INVALID" },
+    "base_mode": { "bits": 0 },
+    "system_status": { "type": "MAV_STATE_ACTIVE" },
+    "mavlink_version": 3
+  }
+}
+```
+
+The `sequence` field in the header is optional (defaults to 0) — the MAVLink connection manages sequencing internally.
+
+### Publishing Commands
+
+```sh
+# Using kcat/kafkacat
+echo '{"header":{"system_id":255,"component_id":190},"message":{"type":"HEARTBEAT","custom_mode":0,"mavtype":{"type":"MAV_TYPE_GCS"},"autopilot":{"type":"MAV_AUTOPILOT_INVALID"},"base_mode":{"bits":0},"system_status":{"type":"MAV_STATE_ACTIVE"},"mavlink_version":3}}' | kcat -P -b localhost:9092 -t mavlink.commands
 ```
 
 ## MAVLink Dialect
