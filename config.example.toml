@@ -1,3 +1,19 @@
+# mavlink-to-kafka configuration
+#
+# Config file resolution order:
+#   1. MAVLINK_TO_KAFKA_CONFIG env var (explicit path)
+#   2. ./config.toml (current working directory)
+#   3. /etc/mavlink-to-kafka/config.toml (system / Docker path)
+#   4. No file — built-in defaults only
+#
+# Environment variables override config file values.
+# Prefix: MAVLINK_TO_KAFKA__ (double underscore separates nesting)
+# Examples:
+#   MAVLINK_TO_KAFKA__MAVLINK__CONNECTION_STRING="udpin:0.0.0.0:14550"
+#   MAVLINK_TO_KAFKA__KAFKA__BROKERS="kafka1:9092,kafka2:9092"
+#   MAVLINK_TO_KAFKA__KAFKA__TOPIC_PREFIX="uav"
+#   MAVLINK_TO_KAFKA__LOGGING__LEVEL="debug"
+
 [mavlink]
 # MAVLink connection string
 # Examples:

@@ -21,34 +21,28 @@ cargo build --release
 ## Usage
 
 ```sh
-# UDP listener (default)
-cargo run -- -m "udpin:0.0.0.0:14550" -b "localhost:9092"
+# Run with default settings (UDP on :14550, Kafka on localhost:9092)
+cargo run --release
 
-# TCP connection
-cargo run -- -m "tcpout:127.0.0.1:5760" -b "localhost:9092"
+# Or use a config file
+cp config.example.toml config.toml
+# Edit config.toml as needed
+cargo run --release
 
-# Serial
-cargo run -- -m "serial:/dev/ttyUSB0:57600" -b "localhost:9092"
+# Or override with environment variables
+MAVLINK_TO_KAFKA__MAVLINK__CONNECTION_STRING="tcpout:127.0.0.1:5760" cargo run --release
 ```
-
-### CLI Options
-
-| Flag | Description |
-|------|-------------|
-| `-c, --config <PATH>` | Path to configuration file |
-| `-m, --mavlink-connection <STRING>` | MAVLink connection string |
-| `-b, --brokers <STRING>` | Kafka broker addresses |
-| `-t, --topic-prefix <STRING>` | Topic prefix (default: `mavlink`) |
-| `-l, --log-level <LEVEL>` | Log level: trace, debug, info, warn, error |
 
 ## Configuration
 
 Configuration is layered (each layer overrides the previous):
 
 1. **Defaults** — sensible built-in values
-2. **TOML file** — `config.toml` (or path passed via `--config`)
+2. **Config file** — resolved in order:
+   - `MAVLINK_TO_KAFKA_CONFIG` env var (explicit path override)
+   - `./config.toml` (current working directory)
+   - `/etc/mavlink-to-kafka/config.toml` (system / Docker path)
 3. **Environment variables** — prefixed with `MAVLINK_TO_KAFKA__` (double underscore separates nesting)
-4. **CLI arguments** — highest priority
 
 See [`config.example.toml`](config.example.toml) for all available options.
 
@@ -60,6 +54,33 @@ export MAVLINK_TO_KAFKA__KAFKA__BROKERS="kafka1:9092,kafka2:9092"
 export MAVLINK_TO_KAFKA__KAFKA__TOPIC_PREFIX="uav"
 export MAVLINK_TO_KAFKA__LOGGING__LEVEL="debug"
 ```
+
+## Docker
+
+### Build the image
+
+```sh
+docker build -t mavlink-to-kafka .
+```
+
+### Run standalone
+
+```sh
+docker run --rm \
+  -e MAVLINK_TO_KAFKA__KAFKA__BROKERS="host.docker.internal:9092" \
+  -p 14550:14550/udp \
+  mavlink-to-kafka
+```
+
+### Run with Docker Compose
+
+The included `docker-compose.yml` starts Kafka (KRaft mode, no ZooKeeper) alongside the bridge:
+
+```sh
+docker compose up
+```
+
+The compose file mounts `./config.toml` into the container and overrides the Kafka broker address via environment variable so the bridge reaches Kafka over the Docker network.
 
 ## Kafka Output
 

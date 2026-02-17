@@ -3,58 +3,15 @@ mod kafka_sink;
 mod mavlink_source;
 mod message;
 
-use clap::Parser;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
-
-#[derive(Parser)]
-#[command(name = "mavlink-to-kafka")]
-#[command(about = "Bridge MAVLink messages to Apache Kafka")]
-struct Cli {
-    /// Path to configuration file
-    #[arg(short, long)]
-    config: Option<String>,
-
-    /// MAVLink connection string (e.g., "udpin:0.0.0.0:14550")
-    #[arg(short = 'm', long)]
-    mavlink_connection: Option<String>,
-
-    /// Kafka broker addresses
-    #[arg(short, long)]
-    brokers: Option<String>,
-
-    /// Kafka topic prefix (topics will be named <prefix>.<MESSAGE_NAME>)
-    #[arg(short = 't', long)]
-    topic_prefix: Option<String>,
-
-    /// Log level (trace, debug, info, warn, error)
-    #[arg(short, long)]
-    log_level: Option<String>,
-}
 
 const CHANNEL_SIZE: usize = 1000;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-
-    // Load configuration with file + env overrides
-    let mut app_config = config::AppConfig::load(cli.config.as_deref())?;
-
-    // CLI args override config values
-    if let Some(conn) = cli.mavlink_connection {
-        app_config.mavlink.connection_string = conn;
-    }
-    if let Some(brokers) = cli.brokers {
-        app_config.kafka.brokers = brokers;
-    }
-    if let Some(prefix) = cli.topic_prefix {
-        app_config.kafka.topic_prefix = prefix;
-    }
-    if let Some(level) = cli.log_level {
-        app_config.logging.level = level;
-    }
+    let app_config = config::AppConfig::load()?;
 
     // Initialize tracing
     tracing_subscriber::fmt()

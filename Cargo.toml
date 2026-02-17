@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
 figment = { version = "0.10", features = ["toml", "env"] }
 mavlink = { version = "0.14", features = ["ardupilotmega", "serde"] }
 rdkafka = { version = "0.37", features = ["cmake-build", "tokio"] }

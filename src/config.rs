@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use figment::Figment;
 use figment::providers::{Env, Format, Serialized, Toml};
@@ -48,14 +49,38 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
-    pub fn load(config_path: Option<&str>) -> anyhow::Result<Self> {
+    pub fn load() -> anyhow::Result<Self> {
+        Self::load_from(Self::resolve_config_path().as_deref())
+    }
+
+    fn resolve_config_path() -> Option<String> {
+        // 1. Explicit env var override
+        if let Ok(path) = std::env::var("MAVLINK_TO_KAFKA_CONFIG") {
+            if Path::new(&path).exists() {
+                return Some(path);
+            }
+        }
+
+        // 2. CWD config.toml (local dev workflow)
+        if Path::new("config.toml").exists() {
+            return Some("config.toml".to_string());
+        }
+
+        // 3. Standard Docker / system path
+        let system_path = "/etc/mavlink-to-kafka/config.toml";
+        if Path::new(system_path).exists() {
+            return Some(system_path.to_string());
+        }
+
+        // 4. No file found — defaults + env vars only
+        None
+    }
+
+    fn load_from(config_path: Option<&str>) -> anyhow::Result<Self> {
         let mut figment = Figment::from(Serialized::defaults(AppConfig::default()));
 
         if let Some(path) = config_path {
             figment = figment.merge(Toml::file(path));
-        } else {
-            // Try default config.toml if it exists
-            figment = figment.merge(Toml::file("config.toml"));
         }
 
         figment = figment.merge(Env::prefixed("MAVLINK_TO_KAFKA__").split("__"));
@@ -121,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_load_defaults_without_file() {
-        let config = AppConfig::load(None).unwrap();
+        let config = AppConfig::load_from(None).unwrap();
         assert_eq!(config.kafka.topic_prefix, "mavlink");
     }
 
@@ -146,7 +171,7 @@ level = "debug"
         )
         .unwrap();
 
-        let config = AppConfig::load(Some(toml_path.to_str().unwrap())).unwrap();
+        let config = AppConfig::load_from(Some(toml_path.to_str().unwrap())).unwrap();
         assert_eq!(config.mavlink.connection_string, "tcpout:127.0.0.1:5760");
         assert_eq!(config.kafka.brokers, "kafka1:9092,kafka2:9092");
         assert_eq!(config.kafka.topic_prefix, "uav");
